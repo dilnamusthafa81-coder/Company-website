@@ -1,42 +1,65 @@
 pipeline {
-    agent {
-        label 'build-server-agent'
+agent {
+label 'build-server-agent'
+}
+
+stages {
+    stage('Checkout') {
+        steps {
+            checkout scm
+        }
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
+    stage('Build Docker Image') {
+        steps {
+            sh '''
+                echo "Building Docker image..."
+                docker build -t company-website:latest .
+            '''
         }
+    }
 
-        stage('Build Docker Image') {
-            steps {
+    stage('Verify Image') {
+        steps {
+            sh '''
+                echo "Verifying Docker image..."
+                docker images
+                docker image inspect company-website:latest
+            '''
+        }
+    }
+
+    stage('Push to Docker Hub') {
+        steps {
+            withCredentials([usernamePassword(
+                credentialsId: 'dockerhub-credentials',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS'
+            )]) {
                 sh '''
-                    echo "Building Docker image..."
-                    docker build -t company-website:latest .
+                    echo "$DOCKER_PASS" | docker login \
+                        -u "$DOCKER_USER" --password-stdin
+
+                    docker tag company-website:latest \
+                        "$DOCKER_USER/company-website:latest"
+
+                    docker push "$DOCKER_USER/company-website:latest"
+
+                    docker logout
                 '''
             }
         }
+    }
+}
 
-        stage('Verify Image') {
-            steps {
-                sh '''
-                    echo "Verifying Docker image..."
-                    docker images
-                    docker image inspect company-website:latest
-                '''
-            }
-        }
+post {
+    success {
+        echo 'Docker image successfully built and pushed to Docker Hub!'
     }
 
-    post {
-        success {
-            echo 'Docker image built successfully!'
-        }
-
-        failure {
-            echo 'Pipeline failed. Check the console output.'
-        }
+    failure {
+        echo 'Pipeline failed. Check the console output.'
     }
+}
+
 }
